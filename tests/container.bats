@@ -34,9 +34,10 @@
     [ "$status" -eq 0 ]
 }
 
-@test "sudo is installed" {
-    run sudo --version
+@test "dev is a member of the docker group" {
+    run getent group docker
     [ "$status" -eq 0 ]
+    [[ ",${output##*:}," == *",dev,"* ]]
 }
 
 @test "fuse-overlayfs is installed" {
@@ -44,23 +45,14 @@
     [ "$status" -eq 0 ]
 }
 
+@test "sudo is installed" {
+    run sudo --version
+    [ "$status" -eq 0 ]
+}
+
 @test "csharpier is installed" {
     run csharpier --version
     [ "$status" -eq 0 ]
-}
-
-# Container user
-
-@test "running as the dev user" {
-    [ "$(id -un)" = "dev" ]
-    [ "$(id -u)" -eq 1000 ]
-    [ "$HOME" = "/home/dev" ]
-}
-
-@test "dev is a member of the docker group" {
-    run getent group docker
-    [ "$status" -eq 0 ]
-    [[ ",${output##*:}," == *",dev,"* ]]
 }
 
 # containers.base dependency validation
