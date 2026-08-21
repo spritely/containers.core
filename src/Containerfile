@@ -29,7 +29,7 @@ ARG AZURE_CLI_VERSION=2.88.0
 
 # Shared devtools from containers.base (install-devtools.sh, apply-templates, merge-xml)
 # renovate: datasource=github-tags depName=spritely/containers.base extractVersion=^v(?<version>.*)$
-ARG CONTAINERS_BASE_VERSION=0.9.0
+ARG CONTAINERS_BASE_VERSION=0.9.6
 
 # CSharpier releases: https://github.com/belav/csharpier/releases
 # renovate: datasource=nuget depName=CSharpier
