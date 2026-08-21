@@ -1,0 +1,20 @@
+name: containers-core
+
+services:
+  dev:
+    build:
+      context: ../src
+      dockerfile: Containerfile
+    # When running Podman, in order for bind mounts to be editable both inside and outside the
+    # devcontainer, it must either run as `root` or the user id must be translated into the
+    # container properly. Setting userns_mode to "keep-id" tells podman to not shift user ids and
+    # fixes this problem so set environment variable USERNS_MODE=keep-id only if running podman.
+    userns_mode: "${USERNS_MODE:-}"
+    volumes:
+      - ../:/src
+      # Codex doesn't have environment variables to do this without an
+      # enterprise subscription so map in common auth folder instead
+      - ${HOME:-$USERPROFILE}/.codex:/home/dev/.codex
+    env_file:
+      - path: .env
+        required: false

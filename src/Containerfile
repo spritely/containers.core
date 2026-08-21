@@ -1,0 +1,114 @@
+# 1. List of all available tags: https://mcr.microsoft.com/product/dotnet/sdk/tags
+# 2. Details about selecting a container image: https://github.com/dotnet/dotnet-docker/blob/main/README.sdk.md
+# 3. Ubuntu releases: https://www.releases.ubuntu.com/
+# 4. Information on dotnet versions: https://dotnet.microsoft.com/en-us/download/dotnet
+# Also see:
+# - .NET tagging policy: https://github.com/dotnet/dotnet-docker/blob/main/documentation/supported-tags.md
+# - .NET image variants: https://github.com/dotnet/dotnet-docker/blob/main/documentation/image-variants.md
+
+# Starting point for this file: https://github.com/devcontainers/images/blob/main/src/dotnet/.devcontainer/Dockerfile
+
+# To find an image tag from #1:
+# - Use the linux amd64 variant from #2
+# - Choose latest long-term-support (LTS) version of Ubuntu from #3
+# - Select the latest dotnet version from #4 that exists in #1
+
+# .NET SDK forms the foundation of this container, but it contains many other dev tools such as Python and node for example
+# .NET SDK tags: https://mcr.microsoft.com/product/dotnet/sdk/tags
+FROM mcr.microsoft.com/dotnet/sdk:10.0.302-resolute-amd64@sha256:303563b156b9cccfb5f5316d18088d40e9073ab7fb47de76349c077eefdedbcf
+
+# Clear this environment variable so xml docs from NuGet packages are unpackaged. The default dotnet/sdk image sets it to 'skip'.
+# See https://github.com/dotnet/dotnet-docker/issues/2790
+ENV NUGET_XMLDOC_MODE=
+
+# Tool versions
+# Obtain the version number from: https://learn.microsoft.com/en-us/cli/azure/release-notes-azure-cli
+# Only use the major, minor, and patch version numbers
+# renovate: datasource=github-tags depName=Azure/azure-cli extractVersion=^azure-cli-(?<version>.*)$
+ARG AZURE_CLI_VERSION=2.88.0
+
+# Shared devtools from containers.base (install-devtools.sh, apply-templates, merge-xml)
+# renovate: datasource=github-tags depName=spritely/containers.base extractVersion=^v(?<version>.*)$
+ARG CONTAINERS_BASE_VERSION=0.9.0
+
+# CSharpier releases: https://github.com/belav/csharpier/releases
+# renovate: datasource=nuget depName=CSharpier
+ARG CSHARPIER_VERSION=1.3.0
+
+# Obtain the version number from: https://dl.k8s.io/release/stable.txt
+# Version will be something like v1.32.2 but commands below require using the major and minor version only
+# kubectl releases: https://kubernetes.io/releases/
+# renovate: datasource=github-releases depName=kubernetes/kubernetes extractVersion=^v(?<version>\d+\.\d+)
+ARG KUBECTL_MINOR_VERSION=1.36
+
+# Pulumi releases: https://www.pulumi.com/docs/install/versions/
+# renovate: datasource=github-releases depName=pulumi/pulumi extractVersion=^v(?<version>.*)$
+ARG PULUMI_VERSION=3.255.0
+
+# Rename the image's built-in 'ubuntu' user to 'dev' (still 1000:1000) so the
+# account name matches all our other devcontainers.
+RUN groupmod --new-name dev ubuntu \
+    && usermod --login dev --home /home/dev --move-home ubuntu
+
+# Shared devtools and scripts from containers.base
+# Bootstrap curl (may not be in base image), then fetch and run install-devtools.sh
+# which installs curl, wget, jq, git, bat, bats, tree, zsh, yq, claude, codex, uv, copier, etc.
+RUN apt-get update && apt-get install -y curl \
+    && BASE_URL="https://raw.githubusercontent.com/spritely/containers.base/v${CONTAINERS_BASE_VERSION}/src" \
+    && curl -fsSL "${BASE_URL}/install-devtools.sh" -o /tmp/install-devtools.sh \
+    && bash /tmp/install-devtools.sh \
+    && curl -fsSL "${BASE_URL}/apply-templates" -o /usr/local/bin/apply-templates \
+    && chmod +x /usr/local/bin/apply-templates \
+    && curl -fsSL "${BASE_URL}/merge-xml" -o /usr/local/bin/merge-xml \
+    && chmod +x /usr/local/bin/merge-xml \
+    && curl -fsSL "${BASE_URL}/post-create" -o /usr/local/bin/post-create \
+    && chmod +x /usr/local/bin/post-create
+
+# Project-specific tools
+RUN apt-get update && apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    sudo \
+    # Docker-in-Docker support
+    fuse-overlayfs \
+    # Enable docker in docker
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && apt-get update && apt-get install -y docker-ce \
+    && mkdir -p /etc/docker \
+    && echo '{"features":{"containerd-snapshotter":false}}' > /etc/docker/daemon.json \
+    # Install Azure CLI, see: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt
+    && curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/keyrings/microsoft.gpg > /dev/null \
+    && chmod go+r /etc/apt/keyrings/microsoft.gpg \
+    # Azure CLI has no resolute suite yet (Azure/azure-cli#33282); pin to noble.
+    # Revisit when packages.microsoft.com publishes resolute.
+    #&& AZ_DIST=$(lsb_release -cs) \
+    && AZ_DIST=noble \
+    && AZ_VER=${AZURE_CLI_VERSION} \
+    && printf 'Types: deb\nURIs: https://packages.microsoft.com/repos/azure-cli/\nSuites: %s\nComponents: main\nArchitectures: %s\nSigned-by: /etc/apt/keyrings/microsoft.gpg\n' "${AZ_DIST}" "$(dpkg --print-architecture)" | tee /etc/apt/sources.list.d/azure-cli.sources \
+    && apt-get update && apt-get install -y azure-cli=${AZ_VER}-1~${AZ_DIST} \
+    # Install Pulumi CLI, see: https://www.pulumi.com/docs/install/
+    && curl -fsSL https://get.pulumi.com | sh -s -- --version ${PULUMI_VERSION} \
+    # Move pulumi to /usr/local/bin so it's in the PATH for all users
+    && mv /root/.pulumi/bin/* /usr/local/bin/ \
+    # Install kubectl CLI, see: https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
+    # Using direct binary download from dl.k8s.io to avoid pkgs.k8s.io rate limiting on shared CI runners
+    && KUBECTL_VERSION=$(curl -fsSL "https://dl.k8s.io/release/stable-${KUBECTL_MINOR_VERSION}.txt") \
+    && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl \
+    && chmod +x /usr/local/bin/kubectl \
+    # Add dev user to the docker group to enable docker usage without sudo
+    && usermod -aG docker dev \
+    && dotnet tool install --tool-path /opt/dotnet-tools --version ${CSHARPIER_VERSION} CSharpier \
+    && ln -sf /opt/dotnet-tools/csharpier /usr/local/bin/csharpier \
+    && chmod -R a+rX /opt/dotnet-tools \
+    # Clean up
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PULUMI_SKIP_UPDATE_CHECK=true
+
+# Start docker in docker
+ENTRYPOINT ["sh", "-c", "sudo dockerd -G $(id -g) > /tmp/dockerd.log 2>&1 & exec \"$@\"", "--"]
+CMD ["sleep", "infinity"]
