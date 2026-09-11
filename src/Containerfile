@@ -39,7 +39,7 @@ ARG CSHARPIER_VERSION=1.3.0
 # Version will be something like v1.32.2 but commands below require using the major and minor version only
 # kubectl releases: https://kubernetes.io/releases/
 # renovate: datasource=github-releases depName=kubernetes/kubernetes extractVersion=^v(?<version>\d+\.\d+)
-ARG KUBECTL_MINOR_VERSION=1.36
+ARG KUBECTL_MINOR_VERSION=1.37
 
 # Pulumi releases: https://www.pulumi.com/docs/install/versions/
 # renovate: datasource=github-releases depName=pulumi/pulumi extractVersion=^v(?<version>.*)$
